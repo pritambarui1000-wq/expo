@@ -1,3 +1,123 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Dimensions } from 'react-native';
+import { Video } from 'expo-av';
+import { auth, db } from './firebaseConfig'; // আপনার ফায়ারবেস কনফিগারেশন ফাইল
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+
+const { width, height } = Dimensions.get('window');
+
+export default function ShareChat() {
+  const [user, setUser] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+
+  // ১. ১২ মাসের জিমেইল ভেরিফিকেশন লজিক
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const creationTime = new Date(result.user.metadata.creationTime);
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    if (creationTime < oneYearAgo) {
+      setUser(result.user);
+    } else {
+      alert("Error: Your Gmail account must be at least 12 months old.");
+      auth.signOut();
+    }
+  };
+
+  // ২. রিয়েল-টাইম চ্যাট লোড করা (Firebase)
+  useEffect(() => {
+    if (user) {
+      const q = query(collection(db, 'messages'), orderBy('createdAt', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      });
+      return unsubscribe;
+    }
+  }, [user]);
+
+  // ৩. মেসেজ পাঠানো
+  const sendMessage = async () => {
+    if (text.trim() !== '') {
+      await addDoc(collection(db, 'messages'), {
+        text,
+        createdAt: serverTimestamp(),
+        sender: user.email,
+      });
+      setText('');
+    }
+  };
+
+  if (!user) {
+    return (
+      <View style={styles.loginContainer}>
+        <Text style={styles.logo}>ShareChat</Text>
+        <TouchableOpacity style={styles.loginBtn} onPress={handleLogin}>
+          <Text style={{ color: '#fff' }}>Login with Gmail</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* ৪. বিশেষ ফিচার: লাইভ ওয়ালপেপার ব্যাকগ্রাউন্ড */}
+      <Video
+        source={{ uri: 'https://assets.mixkit.co/videos/preview/mixkit-curvy-blue-lines-on-black-background-34533-large.mp4' }}
+        rate={1.0}
+        volume={0}
+        isMuted={true}
+        resizeMode="cover"
+        shouldPlay
+        isLooping
+        style={styles.backgroundVideo}
+      />
+
+      <View style={styles.overlay}>
+        <FlatList
+          inverted
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={[styles.bubble, item.sender === user.email ? styles.myBubble : styles.otherBubble]}>
+              <Text>{item.text}</Text>
+            </View>
+          )}
+        />
+        <View style={styles.inputRow}>
+          <TextInput 
+            style={styles.input} 
+            value={text} 
+            onChangeText={setText} 
+            placeholder="Type a message..." 
+            placeholderTextColor="#ccc"
+          />
+          <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}>
+            <Text style={{ color: '#fff' }}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  backgroundVideo: { position: 'absolute', top: 0, left: 0, bottom: 0, right: 0 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', padding: 10 },
+  loginContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
+  logo: { fontSize: 30, fontWeight: 'bold', color: '#075E54', marginBottom: 20 },
+  loginBtn: { backgroundColor: '#075E54', padding: 15, borderRadius: 10 },
+  bubble: { padding: 10, marginVertical: 5, borderRadius: 10, maxWidth: '80%' },
+  myBubble: { alignSelf: 'flex-end', backgroundColor: '#dcf8c6' },
+  otherBubble: { alignSelf: 'flex-start', backgroundColor: '#fff' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff', padding: 10, borderRadius: 20 },
+  sendBtn: { marginLeft: 10, backgroundColor: '#075E54', padding: 10, borderRadius: 20 }
+});
 ---
 title: Set up your environment
 description: Learn how to set up your development environment to start building with Expo.
